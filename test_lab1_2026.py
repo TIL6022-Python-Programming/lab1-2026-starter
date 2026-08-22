@@ -36,16 +36,17 @@ USAGE
 -----
 Point the suite at a single submitted notebook:
 
-    NOTEBOOK_PATH=/path/to/student_submission.ipynb pytest test_lab1_2026.py -v
+    NOTEBOOK_PATH=/path/to/student_submission.ipynb pytest test_lab1_2026.py -v --tb=short
 
 Or point it at a folder full of submissions to grade the whole class in one
 run (every question is tested against every *.ipynb file found):
 
-    NOTEBOOK_PATH=/path/to/submissions_folder pytest test_lab1_2026.py -v
+    NOTEBOOK_PATH=/path/to/submissions_folder pytest test_lab1_2026.py -v --tb=short
 
 If NOTEBOOK_PATH isn't set, the suite looks for a "submissions/" folder next
 to this test file, and falls back to any *.ipynb file in the current
 directory.
+
 """
 
 import glob
@@ -171,13 +172,15 @@ def _find_cell_by_tag(cells, tag):
             f"No cell tagged '{tag}' was found in this notebook. Add that "
             f"tag to the intended answer cell -- in VS Code, click '...' "
             f"on the cell, then 'Add Cell Tag', type the '{tag}'. See the "
-            f"module docstring in this test file for other Jupyter versions. "
+            f"module docstring in this test file for other Jupyter versions. ",
+            pytrace=False,
         )
     if len(matches) > 1:
         pytest.fail(
             f"Cell tag '{tag}' appears on {len(matches)} cells (indices "
             f"{matches}) -- it must be unique. Remove the tag from whichever "
-            f"cell isn't the intended answer."
+            f"cell isn't the intended answer.",
+            pytrace=False,
         )
     return matches[0]
 
@@ -197,10 +200,11 @@ def loaded_notebooks():
             pytest.fail(
                 "No notebook found to test. Set the NOTEBOOK_PATH environment "
                 "variable to a student's .ipynb file (or a folder of them), "
-                "e.g.: NOTEBOOK_PATH=submission.ipynb pytest test_lab1_2026.py -v"
+                "e.g.: NOTEBOOK_PATH=submission.ipynb pytest test_lab1_2026.py -v",
+                pytrace=False,
             )
         if not os.path.exists(path):
-            pytest.fail(f"Notebook not found: {path}")
+            pytest.fail(f"Notebook not found: {path}", pytrace=False)
         if path not in cache:
             cells = _load_cells(path)
             outputs = _run_notebook_capture_per_cell_stdout(cells)
@@ -215,19 +219,23 @@ def _check_question(loaded_notebooks, notebook_path, question):
     tag = CELL_TAGS[question]
     idx = _find_cell_by_tag(cells, tag)
 
-    assert cells[idx].get("cell_type") == "code", (
-        f"{question}: the cell tagged '{tag}' in "
-        f"{os.path.basename(notebook_path)} is a "
-        f"'{cells[idx].get('cell_type')}' cell, not code. Move the tag onto "
-        f"the actual answer code cell."
-    )
+    if cells[idx].get("cell_type") != "code":
+        pytest.fail(
+            f"{question}: the cell tagged '{tag}' in "
+            f"{os.path.basename(notebook_path)} is a "
+            f"'{cells[idx].get('cell_type')}' cell, not code. Move the tag "
+            f"onto the actual answer code cell.",
+            pytrace=False,
+        )
 
     actual = outputs.get(idx, "")
     expected = EXPECTED_OUTPUT[question]
-    assert actual == expected, (
-        f"{question} (cell tagged '{tag}', index {idx}) printed:\n{actual!r}"
-        f"\n\nexpected:\n{expected!r}"
-    )
+    if actual != expected:
+        # A short, message-only failure (no Python traceback)
+        pytest.fail(
+            f"{question} MISMATCH -- got: {actual!r} | expected: {expected!r}",
+            pytrace=False,
+        )
 
 
 # ---------------------------------------------------------------------------
